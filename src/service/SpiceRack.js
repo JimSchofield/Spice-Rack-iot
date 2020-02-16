@@ -28,11 +28,50 @@ export default class SpiceRack {
     this.position = 0
     this.direction = 'l'
 
-    // Instruction queue
-    this.stack = []
+    // SpiceArray
+    this.spiceArray = []
+
+    // Callback Stack
+    this.callbackStack = []
 
     // When spicerack sends a "finished" message
-    this.ws.socket.addEventListener('message', console.log)
+    // this.ws.socket.addEventListener('message', console.log)
+  }
+
+  startFetching(spiceArray) {
+    this.spiceArray = spiceArray
+
+    const spiceLocationArray = this.spiceArray.map(spice => spice.position)
+
+    const returnLocationPromise = (position, last = false) => {
+      return new Promise(resolve => {
+        const handleMoveEnd = event => {
+          console.log(event, ' **FINISHED**')
+          this.ws.socket.removeEventListener('message', handleMoveEnd)
+
+          this.push()
+
+          setTimeout(() => {
+            if (last) {
+              console.log('last...')
+              this.to(0)
+            }
+            resolve()
+          }, 2000)
+        }
+
+        this.ws.socket.addEventListener('message', handleMoveEnd)
+
+        // pusher is 3cm above shuttle position
+        this.to(position - 3)
+      })
+    }
+
+    spiceLocationArray.reduce((previousPromise, nextPosition, currentIndex) => {
+      return previousPromise.then(() => {
+        return returnLocationPromise(nextPosition, currentIndex === spiceLocationArray.length - 1)
+      })
+    }, Promise.resolve())
   }
 
   toggleLED() {
@@ -45,7 +84,7 @@ export default class SpiceRack {
     }
   }
 
-  to(cmPosition) {
+  to(cmPosition, force = false) {
     const delta = Number(cmPosition) - this.position
     const steps = Math.abs(delta) / 4 * 1600
     if (delta < 0) {
@@ -58,9 +97,8 @@ export default class SpiceRack {
 
     // guard against shuttle colliding with holders
     if (
-      this.position + delta < 0 ||
-      this.position + delta > 50
-    ) {
+      (this.position + delta < 0 ||
+        this.position + delta > 50) && !force) {
       throw new Error('Spice rack is trying to go too far')
     }
 
